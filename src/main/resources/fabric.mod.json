@@ -4,8 +4,14 @@
   "version": "${version}",
   "name": "DNBackUp",
   "description": "Backup world for hardcore mode",
-  "authors": [],
-  "contact": {},
+  "authors": [
+    "devnguyen0111"
+  ],
+  "contact": {
+    "homepage": "https://github.com/devnguyen0111/DNBackUp",
+    "sources": "https://github.com/devnguyen0111/DNBackUp",
+    "issues": "https://github.com/devnguyen0111/DNBackUp/issues"
+  },
   "license": "BSD-2-Clause-FreeBSD",
   "icon": "assets/dnbackup/icon.png",
   "environment": "*",
