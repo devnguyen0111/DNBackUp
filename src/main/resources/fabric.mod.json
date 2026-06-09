@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "dnbackup",
+  "version": "${version}",
+  "name": "DNBackUp",
+  "description": "Backup world for hardcore mode",
+  "authors": [],
+  "contact": {},
+  "license": "BSD-2-Clause-FreeBSD",
+  "icon": "assets/dnbackup/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": [
+      "org.dnplugins.dnbackup.client.DnbackupDataGenerator"
+    ],
+    "client": [
+      "org.dnplugins.dnbackup.client.DnbackupClient"
+    ],
+    "main": [
+      "org.dnplugins.dnbackup.Dnbackup"
+    ]
+  },
+  "mixins": [
+    "dnbackup.mixins.json",
+    {
+      "config": "dnbackup.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
