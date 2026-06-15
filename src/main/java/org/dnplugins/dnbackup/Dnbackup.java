@@ -22,8 +22,13 @@ public class Dnbackup implements ModInitializer {
     private static long nextBackupTime = 0;
 
     public static void updateNextBackupTime() {
-        nextBackupTime = System.currentTimeMillis() + (ConfigManager.getConfig().getTimerIntervalMinutes() * 60L * 1000L);
-        LOGGER.info("Next backup scheduled in {} minutes.", ConfigManager.getConfig().getTimerIntervalMinutes());
+        int interval = ConfigManager.getConfig().getTimerIntervalMinutes();
+        if (interval <= 0) {
+            nextBackupTime = Long.MAX_VALUE;
+            return;
+        }
+        nextBackupTime = System.currentTimeMillis() + (interval * 60L * 1000L);
+        LOGGER.info("Next backup scheduled in {} minutes.", interval);
     }
 
     @Override
@@ -45,8 +50,42 @@ public class Dnbackup implements ModInitializer {
             }
         });
 
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            ModConfig config = ConfigManager.getConfig();
+            if (config.isBackupOnShutdown()) {
+                LOGGER.info("Server is stopping. Triggering backup before shutdown...");
+                if (!BackupManager.isBackupRunning()) {
+                    BackupManager.startBackup(server);
+                }
+                while (BackupManager.isBackupRunning()) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                LOGGER.info("Backup completed. Proceeding with shutdown.");
+            } else if (BackupManager.isBackupRunning()) {
+                LOGGER.warn("A backup is currently running! Waiting for it to complete to prevent corruption before shutting down...");
+                while (BackupManager.isBackupRunning()) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        });
+
         // Register tick event for scheduled backups
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            int interval = ConfigManager.getConfig().getTimerIntervalMinutes();
+            if (interval <= 0) {
+                return;
+            }
+
             long now = System.currentTimeMillis();
             if (nextBackupTime == 0) {
                 updateNextBackupTime();
@@ -102,8 +141,9 @@ public class Dnbackup implements ModInitializer {
                         context.getSource().sendSuccess(() -> Component.literal("§fMax Storage: §b" + config.getMaxStorageMb() + " MB"), false);
                         context.getSource().sendSuccess(() -> Component.literal("§fZip Compression Level: §b" + config.getCompressionLevel()), false);
                         context.getSource().sendSuccess(() -> Component.literal("§fOnly When Players Online: §b" + config.isOnlyWhenPlayersOnline()), false);
-                        context.getSource().sendSuccess(() -> Component.literal("§fBackup on Startup: §b" + config.isBackupOnStartup()), false);
-                        context.getSource().sendSuccess(() -> Component.literal("§fSilent (No chat announcements): §b" + config.isSilent()), false);
+                        context.getSource().sendSuccess(() -> Component.literal("§fBackup on Startup: " + (config.isBackupOnStartup() ? "§aYes" : "§cNo")), false);
+                        context.getSource().sendSuccess(() -> Component.literal("§fBackup on Shutdown: " + (config.isBackupOnShutdown() ? "§aYes" : "§cNo")), false);
+                        context.getSource().sendSuccess(() -> Component.literal("§fSilent (No chat announcements): " + (config.isSilent() ? "§aYes" : "§cNo")), false);
                         context.getSource().sendSuccess(() -> Component.literal("§fExtra Files to Backup: §b" + config.getExtraFiles().size() + " items"), false);
                         return 1;
                     }))

@@ -31,7 +31,7 @@ import java.util.zip.ZipOutputStream;
 public class BackupManager {
     private static final Logger LOGGER = LoggerFactory.getLogger("DNBackUp");
     private static boolean isBackupRunning = false;
-    private static long lastBackupTime = 0;
+    private static volatile long lastBackupTime = 0;
 
     public static synchronized boolean isBackupRunning() {
         return isBackupRunning;
@@ -52,12 +52,16 @@ public class BackupManager {
 
         ModConfig config = ConfigManager.getConfig();
 
-        // 1. Run save-off and save-all on main thread
-        server.execute(() -> {
+        Runnable initTask = () -> {
             try {
                 LOGGER.info("Starting backup process. Pausing autosave...");
                 server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), "save-off");
                 server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), "save-all");
+
+                // Broadcast chat notification if not silent
+                if (!config.isSilent()) {
+                    server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal("§7[DNBackUp] Starting world backup..."), false);
+                }
 
                 // Send initial progress to players
                 sendProgressToAll(server, 0.0f, "Preparing backup...", 0, 0, 0L);
@@ -69,13 +73,21 @@ public class BackupManager {
                 LOGGER.error("Failed to initialize backup: ", e);
                 cleanupFailedBackup(server);
             }
-        });
+        };
+
+        if (server.isSameThread()) {
+            initTask.run();
+        } else {
+            server.execute(initTask);
+        }
     }
 
     private static void runAsyncBackup(MinecraftServer server, ModConfig config) {
         Path gameDir = FabricLoader.getInstance().getGameDir();
         Path worldDir = server.getWorldPath(LevelResource.ROOT);
         Path backupsDir = gameDir.resolve("backups");
+        Path tempZipPath = null;
+        String zipFileName = "";
 
         try {
             Files.createDirectories(backupsDir);
@@ -83,10 +95,14 @@ public class BackupManager {
             // 1. Gather all files to back up
             List<Path> filesToBackup = new ArrayList<>();
             
-            // Walk world directory
+            // Walk world directory, excluding lock files
             try (var stream = Files.walk(worldDir)) {
                 stream.filter(Files::isRegularFile)
                       .filter(p -> !p.startsWith(backupsDir)) // Exclude backups folder just in case
+                      .filter(p -> {
+                          String name = p.getFileName().toString();
+                          return !name.equals("session.lock") && !name.endsWith(".lock") && !name.endsWith(".lck");
+                      })
                       .forEach(filesToBackup::add);
             }
 
@@ -107,11 +123,12 @@ public class BackupManager {
 
             // 2. Prepare Zip file
             String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-            String zipFileName = "backup_" + timestamp + ".zip";
-            Path tempZipPath = backupsDir.resolve(zipFileName + ".tmp");
+            zipFileName = "backup_" + timestamp + ".zip";
+            tempZipPath = backupsDir.resolve(zipFileName + ".tmp");
             Path finalZipPath = backupsDir.resolve(zipFileName);
 
             long bytesWritten = 0;
+            long bytesSinceLastProgress = 0;
             byte[] buffer = new byte[8192];
             int processedFiles = 0;
 
@@ -126,9 +143,10 @@ public class BackupManager {
 
                     // Determine relative zip entry name
                     String entryName;
-                    if (file.startsWith(worldDir)) {
+                    Path parent = worldDir.getParent();
+                    if (parent != null && file.startsWith(worldDir)) {
                         // Keep world directory name in zip (e.g. world/level.dat)
-                        entryName = worldDir.getParent().relativize(file).toString().replace('\\', '/');
+                        entryName = parent.relativize(file).toString().replace('\\', '/');
                     } else {
                         // Relativize against game directory for extra files
                         entryName = gameDir.relativize(file).toString().replace('\\', '/');
@@ -143,18 +161,21 @@ public class BackupManager {
                             while ((bytesRead = bis.read(buffer)) != -1) {
                                 zos.write(buffer, 0, bytesRead);
                                 bytesWritten += bytesRead;
+                                bytesSinceLastProgress += bytesRead;
 
-                                // Send progress updates
-                                float progress = totalBytes > 0 ? (float) bytesWritten / totalBytes : 0f;
-                                // Clamp progress below 1.0f during active zipping
-                                progress = Math.max(0f, Math.min(0.99f, progress));
-                                
-                                int percent = (int) (progress * 100);
-                                long now = System.currentTimeMillis();
-                                if (percent != lastSentPercent || now - lastSentTime > 100) {
-                                    sendProgressToAll(server, progress, "Compressing...", processedFiles, totalFiles, totalBytes);
-                                    lastSentPercent = percent;
-                                    lastSentTime = now;
+                                // Send progress updates every 1MB or if percent changes
+                                if (bytesSinceLastProgress >= 1024 * 1024) {
+                                    bytesSinceLastProgress = 0;
+                                    float progress = totalBytes > 0 ? (float) bytesWritten / totalBytes : 0f;
+                                    progress = Math.max(0f, Math.min(0.99f, progress));
+                                    
+                                    int percent = (int) (progress * 100);
+                                    long now = System.currentTimeMillis();
+                                    if (percent != lastSentPercent || now - lastSentTime > 100) {
+                                        sendProgressToAll(server, progress, "Compressing...", processedFiles, totalFiles, totalBytes);
+                                        lastSentPercent = percent;
+                                        lastSentTime = now;
+                                    }
                                 }
                             }
                         }
@@ -178,6 +199,11 @@ public class BackupManager {
             lastBackupTime = System.currentTimeMillis();
             LOGGER.info("Backup successfully saved as: {}", zipFileName);
 
+            // Chat announcement if not silent
+            if (!config.isSilent()) {
+                server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal("§a[DNBackUp] Backup completed successfully! (" + zipFileName + ")"), false);
+            }
+
             // Send success packet (progress = 2.0f triggers client success HUD)
             sendProgressToAll(server, 2.0f, "Backup completed successfully!", totalFiles, totalFiles, totalBytes);
 
@@ -186,6 +212,14 @@ public class BackupManager {
 
         } catch (Exception e) {
             LOGGER.error("Error during asynchronous backup: ", e);
+            if (tempZipPath != null) {
+                try {
+                    Files.deleteIfExists(tempZipPath);
+                } catch (IOException ignored) {}
+            }
+            if (!config.isSilent()) {
+                server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal("§c[DNBackUp] Backup failed: " + e.getMessage()), false);
+            }
             sendProgressToAll(server, -2.0f, "Backup failed: " + e.getMessage(), 0, 0, 0L);
         } finally {
             // Re-enable autosave on server thread
@@ -193,10 +227,10 @@ public class BackupManager {
                 LOGGER.info("Resuming autosave...");
                 server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), "save-on");
                 server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), "save-all");
-                synchronized (BackupManager.class) {
-                    isBackupRunning = false;
-                }
             });
+            synchronized (BackupManager.class) {
+                isBackupRunning = false;
+            }
         }
     }
 

@@ -12,6 +12,7 @@ public class ModConfig {
     private List<String> extraFiles = new ArrayList<>();
     private boolean silent = true;
     private boolean backupOnStartup = true;
+    private boolean backupOnShutdown = true;
 
     // Getters
     public int getMaxBackupsToKeep() {
@@ -47,6 +48,11 @@ public class ModConfig {
         return backupOnStartup;
     }
 
+    public boolean isBackupOnShutdown() {
+        return backupOnShutdown;
+    }
+
+
     // Setters (useful for defaults/commands)
     public void setMaxBackupsToKeep(int maxBackupsToKeep) {
         this.maxBackupsToKeep = maxBackupsToKeep;
@@ -78,5 +84,9 @@ public class ModConfig {
 
     public void setBackupOnStartup(boolean backupOnStartup) {
         this.backupOnStartup = backupOnStartup;
+    }
+
+    public void setBackupOnShutdown(boolean backupOnShutdown) {
+        this.backupOnShutdown = backupOnShutdown;
     }
 }
