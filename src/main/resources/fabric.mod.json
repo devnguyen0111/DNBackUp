@@ -3,7 +3,7 @@
   "id": "dnbackup",
   "version": "${version}",
   "name": "DNBackUp",
-  "description": "Backup world for hardcore mode",
+  "description": "A premium Fabric mod to automatically and manually back up your Minecraft worlds, featuring async compression, storage size/count limits, and a beautiful HUD progress tracker.",
   "authors": [
     "devnguyen0111"
   ],
@@ -16,14 +16,14 @@
   "icon": "assets/dnbackup/icon.png",
   "environment": "*",
   "entrypoints": {
-    "fabric-datagen": [
-      "org.dnplugins.dnbackup.client.DnbackupDataGenerator"
+    "main": [
+      "org.dnplugins.dnbackup.Dnbackup"
     ],
     "client": [
       "org.dnplugins.dnbackup.client.DnbackupClient"
     ],
-    "main": [
-      "org.dnplugins.dnbackup.Dnbackup"
+    "fabric-datagen": [
+      "org.dnplugins.dnbackup.client.DnbackupDataGenerator"
     ]
   },
   "mixins": [
@@ -36,6 +36,7 @@
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
-    "minecraft": "${minecraft_version}"
+    "minecraft": "${minecraft_version}",
+    "java": ">=25"
   }
 }
