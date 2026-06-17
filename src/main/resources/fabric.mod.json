@@ -21,18 +21,9 @@
     ],
     "client": [
       "org.dnplugins.dnbackup.client.DnbackupClient"
-    ],
-    "fabric-datagen": [
-      "org.dnplugins.dnbackup.client.DnbackupDataGenerator"
     ]
   },
-  "mixins": [
-    "dnbackup.mixins.json",
-    {
-      "config": "dnbackup.client.mixins.json",
-      "environment": "client"
-    }
-  ],
+
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",

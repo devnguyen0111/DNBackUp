@@ -1,20 +1,26 @@
 # Changelog - DNBackUp
 
-## [0.3] - 2026-06-15
+## [0.3.1] - 2026-06-15
 
 ### 🚀 Added
 - **Backup on Shutdown:** Added a configuration option `backupOnShutdown` (default `true`) to automatically back up the world when the server is stopping, gracefully waiting for completion before shutting down.
 - **Chat Announcements:** Implemented chat announcements for backup start, success, and failure, controlled by the `silent` config option.
+- **Modern Text Formatting:** Migrated all in-game messages from outdated `§` style codes to modern Minecraft `ChatFormatting` styling components to prevent message truncation.
+
+### ⚙️ Changed & Optimized
+- **Smart Network Throttling:** Throttled progress packet transmissions to client HUD to update only when the progress percentage changes, every `250ms`, or upon file completion. This prevents networking queue flooding on servers.
+- **Performance Tuning:** Increased zip compression buffer size from `8KB` to `64KB`, improving backup speed and CPU efficiency.
+- **Tick Optimization:** Cached config checks inside the main scheduler loop to avoid calling config reads 20 times per second.
+- **Clean Mod Weight:** Removed dead generator and empty mixin configurations to speed up mod loading times.
 
 ### 🐛 Fixed
+- **Shutdown Thread Hang Protection:** Added a 5-minute safety timeout to the shutdown hook to ensure the server never hangs indefinitely if a thread error occurs during shutdown.
+- **Backup State Thread Safety:** Configured `isBackupRunning` and scheduling variables to be thread-safe (`volatile` / synchronized locks) to avoid race conditions.
+- **Autosave Recovery:** Fixed a bug where a failed backup initialization could leave the server with `save-off` (autosave disabled) forever.
+- **Thread-safe Configs:** Synchronized configuration load, save, and reload routines to prevent partial reads or writing conflicts.
 - **Infinite Scheduled Backup Loop:** Fixed a critical bug where auto-backups loop indefinitely if `timerIntervalMinutes` is set to 0 or negative.
 - **Garbage Temp Files:** Fixed a bug where `.tmp` files are left behind on backup failure.
 - **File Lock Warnings:** Excluded `session.lock` and other `.lock`/`.lck` files from backups to avoid noisy JVM file locking errors on Windows.
-
-### ⚙️ Changed & Optimized
-- **Reduced Networking Overhead:** Throttled progress packet transmissions to update every 1MB of compressed bytes instead of 8KB, drastically reducing server queue overhead.
-- **Thread Safety:** Marked `lastBackupTime` as `volatile` to prevent visibility issues across threads.
-- **Robustness:** Added null-safety checks when obtaining the parent directory of the world.
 
 ---
 

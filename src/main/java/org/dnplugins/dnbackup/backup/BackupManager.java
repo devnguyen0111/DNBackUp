@@ -2,6 +2,7 @@ package org.dnplugins.dnbackup.backup;
 
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.ChatFormatting;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.storage.LevelResource;
@@ -30,7 +31,7 @@ import java.util.zip.ZipOutputStream;
 
 public class BackupManager {
     private static final Logger LOGGER = LoggerFactory.getLogger("DNBackUp");
-    private static boolean isBackupRunning = false;
+    private static volatile boolean isBackupRunning = false;
     private static volatile long lastBackupTime = 0;
 
     public static synchronized boolean isBackupRunning() {
@@ -60,7 +61,7 @@ public class BackupManager {
 
                 // Broadcast chat notification if not silent
                 if (!config.isSilent()) {
-                    server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal("§7[DNBackUp] Starting world backup..."), false);
+                    server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal("[DNBackUp] Starting world backup...").withStyle(ChatFormatting.GRAY), false);
                 }
 
                 // Send initial progress to players
@@ -129,7 +130,7 @@ public class BackupManager {
 
             long bytesWritten = 0;
             long bytesSinceLastProgress = 0;
-            byte[] buffer = new byte[8192];
+            byte[] buffer = new byte[65536]; // 64KB buffer for optimized performance
             int processedFiles = 0;
 
             long lastSentTime = 0;
@@ -185,12 +186,16 @@ public class BackupManager {
                     }
                     processedFiles++;
 
-                    // Send an update after zipping each file to ensure file count stays accurate
+                    // Send an update after zipping each file, throttled to prevent spamming packets
                     float progress = totalBytes > 0 ? (float) bytesWritten / totalBytes : 0f;
                     progress = Math.max(0f, Math.min(0.99f, progress));
-                    sendProgressToAll(server, progress, "Compressing...", processedFiles, totalFiles, totalBytes);
-                    lastSentPercent = (int) (progress * 100);
-                    lastSentTime = System.currentTimeMillis();
+                    int percent = (int) (progress * 100);
+                    long now = System.currentTimeMillis();
+                    if (percent != lastSentPercent || now - lastSentTime > 250 || processedFiles == totalFiles) {
+                        sendProgressToAll(server, progress, "Compressing...", processedFiles, totalFiles, totalBytes);
+                        lastSentPercent = percent;
+                        lastSentTime = now;
+                    }
                 }
             }
 
@@ -201,7 +206,7 @@ public class BackupManager {
 
             // Chat announcement if not silent
             if (!config.isSilent()) {
-                server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal("§a[DNBackUp] Backup completed successfully! (" + zipFileName + ")"), false);
+                server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal("[DNBackUp] Backup completed successfully! (" + zipFileName + ")").withStyle(ChatFormatting.GREEN), false);
             }
 
             // Send success packet (progress = 2.0f triggers client success HUD)
@@ -218,7 +223,7 @@ public class BackupManager {
                 } catch (IOException ignored) {}
             }
             if (!config.isSilent()) {
-                server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal("§c[DNBackUp] Backup failed: " + e.getMessage()), false);
+                server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal("[DNBackUp] Backup failed: " + e.getMessage()).withStyle(ChatFormatting.RED), false);
             }
             sendProgressToAll(server, -2.0f, "Backup failed: " + e.getMessage(), 0, 0, 0L);
         } finally {
@@ -306,7 +311,9 @@ public class BackupManager {
             isBackupRunning = false;
         }
         server.execute(() -> {
+            LOGGER.info("Resuming autosave (failed backup cleanup)...");
             server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), "save-on");
+            server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), "save-all");
         });
     }
 

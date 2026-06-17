@@ -17,13 +17,13 @@ public class ConfigManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("dnbackup.json");
     
-    private static ModConfig config = new ModConfig();
+    private static volatile ModConfig config = new ModConfig();
 
     public static ModConfig getConfig() {
         return config;
     }
 
-    public static void load() {
+    public static synchronized void load() {
         if (!Files.exists(CONFIG_PATH)) {
             LOGGER.info("Config file not found, creating default config.");
             save();
@@ -43,7 +43,7 @@ public class ConfigManager {
         }
     }
 
-    public static void save() {
+    public static synchronized void save() {
         try {
             Files.createDirectories(CONFIG_PATH.getParent());
             try (Writer writer = Files.newBufferedWriter(CONFIG_PATH)) {
@@ -55,7 +55,7 @@ public class ConfigManager {
         }
     }
 
-    public static void reload() {
+    public static synchronized void reload() {
         load();
     }
 }
